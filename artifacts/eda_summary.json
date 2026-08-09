@@ -1,0 +1,22 @@
+{
+  "rows": 1168,
+  "columns": 81,
+  "numeric_features": 36,
+  "categorical_features": 43,
+  "missing_cells": 6227,
+  "columns_with_missing": 19,
+  "duplicate_rows": 0,
+  "duplicate_ids": 0,
+  "target": {
+    "mean": 181441.5419520548,
+    "median": 165000.0,
+    "std": 77263.58386222839,
+    "min": 34900.0,
+    "max": 745000.0,
+    "skew": 1.743128561420854
+  },
+  "numeric_coded_categories": [
+    "MSSubClass",
+    "MoSold"
+  ]
+}
