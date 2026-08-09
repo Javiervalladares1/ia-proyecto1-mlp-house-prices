@@ -8,6 +8,7 @@ __pycache__/
 tmp/
 data/raw/*.csv
 data/processed/*.csv
+artifacts/simulated_heldout.csv
 predictions/*.csv
 models/validation_model/
 experiments/optuna.db
