@@ -109,12 +109,23 @@ def evaluate_config(X, y, params, folds=3, seed=SEED, trial=None, save_history_n
 
 def plot_history(history, path, title):
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
-    axes[0].plot(history.epoch, history.train_loss, color="#2E6F9E")
-    axes[0].set(title=f"Loss de entrenamiento - {title}", xlabel="Epoca", ylabel="MSE estandarizado")
+    axes[0].plot(history.epoch, history.train_loss, label="Entrenamiento", color="#2E6F9E")
+    axes[0].plot(history.epoch, history.val_loss, label="Validación", color="#C7793B")
+    axes[0].set(title=f"Loss por época - {title}", xlabel="Época", ylabel="MSE estandarizado")
+    axes[0].legend()
     axes[1].plot(history.epoch, history.train_rmse, label="Entrenamiento", color="#2E6F9E")
-    axes[1].plot(history.epoch, history.val_rmse, label="Validacion", color="#C7793B")
-    axes[1].set(title=f"RMSE en escala original - {title}", xlabel="Epoca", ylabel="RMSE (USD)")
+    axes[1].plot(history.epoch, history.val_rmse, label="Validación", color="#C7793B")
+    axes[1].set(title=f"RMSE en escala original - {title}", xlabel="Época", ylabel="RMSE (USD)")
     axes[1].legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=180, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+
+
+def plot_fixed_history(history, path, title):
+    fig, axis = plt.subplots(figsize=(7.2, 4.2))
+    axis.plot(history.epoch, history.train_loss, color="#2E6F9E")
+    axis.set(title=title, xlabel="Época", ylabel="MSE estandarizado")
     fig.tight_layout()
     fig.savefig(path, dpi=180, bbox_inches="tight", facecolor="white")
     plt.close(fig)
@@ -132,7 +143,7 @@ def record_result(rows, experiment_id, kind, params, metrics, notes=""):
         "normalization": cfg.normalization, "optimizer": cfg.optimizer,
         "learning_rate": cfg.learning_rate, "weight_decay": cfg.weight_decay,
         "dropout": cfg.dropout, "batch_size": cfg.batch_size,
-        "epochs": metrics.get("best_epoch_median"), "early_stopping": True,
+        "epochs": metrics.get("best_epoch_median"), "early_stopping": kind != "final",
         "train_rmse": metrics.get("train_rmse"), "validation_rmse": metrics.get("cv_rmse_mean"),
         "cv_rmse_mean": metrics.get("cv_rmse_mean"), "cv_rmse_std": metrics.get("cv_rmse_std"),
         "holdout_rmse": metrics.get("holdout_rmse"), "n_features": metrics.get("n_features"),
@@ -170,8 +181,9 @@ def error_analysis(X_hold, y_hold, pred, source_df):
         "absolute_error": np.abs(residual), "absolute_percentage_error": np.abs(residual) / y_hold * 100,
     }, index=X_hold.index)
     errors = errors.join(source_df.loc[X_hold.index, [c for c in ["Neighborhood", "OverallQual", "GrLivArea", "YearBuilt"] if c in source_df]])
-    errors.sort_values("absolute_error", ascending=False).to_csv(ARTIFACTS_DIR / "holdout_errors.csv", index=False)
-    errors.head(20).to_csv(ARTIFACTS_DIR / "largest_errors.csv", index=False)
+    sorted_errors = errors.sort_values("absolute_error", ascending=False)
+    sorted_errors.to_csv(ARTIFACTS_DIR / "holdout_errors.csv", index=False)
+    sorted_errors.head(20).to_csv(ARTIFACTS_DIR / "largest_errors.csv", index=False)
     errors["price_segment"] = pd.qcut(errors.actual, 4, labels=["Bajo", "Medio-bajo", "Medio-alto", "Alto"])
     segment = errors.groupby("price_segment", observed=True).agg(
         count=("actual", "size"), rmse=("residual", lambda x: np.sqrt(np.mean(x ** 2))),
@@ -207,15 +219,6 @@ def main(trials=18):
     X_dev, y_dev = X.iloc[dev_idx].reset_index(drop=True), y.iloc[dev_idx].reset_index(drop=True)
     X_hold, y_hold = X.iloc[hold_idx], y.iloc[hold_idx].to_numpy()
     results = []
-
-    # Non-MLP benchmark to contextualize the mandatory model.
-    ridge_prep = build_preprocessor(X_dev, feature_engineering=True, scaler="standard", skew_threshold=.75)
-    Xd = ridge_prep.fit_transform(X_dev)
-    ridge = Ridge(alpha=20.0).fit(Xd, np.log1p(y_dev))
-    ridge_pred = np.expm1(ridge.predict(ridge_prep.transform(X_hold)))
-    benchmark_rmse = rmse(y_hold, ridge_pred)
-    pd.DataFrame([{"model": "Ridge benchmark (not candidate)", "holdout_rmse": benchmark_rmse}]).to_csv(
-        EXPERIMENTS_DIR / "benchmark.csv", index=False)
 
     exploratory = [
         ("baseline_raw", dict(hidden_layers="128-64", activation="relu", dropout=0.0,
@@ -265,8 +268,6 @@ def main(trials=18):
             "max_epochs": 350, "patience": 35,
         }
         metrics = evaluate_config(X_dev, y_dev, params, folds=3, trial=trial)
-        record_result(results, f"optuna_{trial.number:03d}", "optuna", params, metrics)
-        pd.DataFrame(results).to_csv(EXPERIMENTS_DIR / "results.csv", index=False)
         trial.set_user_attr("metrics", metrics)
         return metrics["cv_rmse_mean"]
 
@@ -275,7 +276,8 @@ def main(trials=18):
     study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner,
                                 study_name="ames_mlp", storage=f"sqlite:///{EXPERIMENTS_DIR / 'optuna.db'}",
                                 load_if_exists=True)
-    if len(study.trials) < 2:
+    existing_trials = len(study.trials)
+    if existing_trials < 2:
         study.enqueue_trial({
             "hidden_layers": "256-256-128", "activation": "silu", "dropout": .2,
             "normalization": "layer", "learning_rate": 6e-4, "weight_decay": 5e-4,
@@ -283,10 +285,18 @@ def main(trials=18):
             "scaler": "robust", "skew_threshold": .75, "clip_quantile": .01,
             "min_frequency": 2, "feature_engineering": True,
         })
-    remaining = max(0, trials - len(study.trials))
+    remaining = max(0, trials - existing_trials)
     if remaining:
         study.optimize(objective, n_trials=remaining, gc_after_trial=True, show_progress_bar=False)
     study.trials_dataframe().to_csv(EXPERIMENTS_DIR / "optuna_trials.csv", index=False)
+    for completed_trial in study.trials:
+        if completed_trial.state != optuna.trial.TrialState.COMPLETE:
+            continue
+        metrics = completed_trial.user_attrs.get("metrics")
+        if metrics is None:
+            raise RuntimeError(f"El trial completo {completed_trial.number} no contiene métricas reproducibles")
+        params = {**completed_trial.params, "max_epochs": 350, "patience": 35}
+        record_result(results, f"optuna_{completed_trial.number:03d}", "optuna", params, metrics)
 
     # Re-check three promising, structurally different candidates on a new
     # five-fold partition. This reduces the chance of selecting a lucky 3-fold trial.
@@ -309,27 +319,43 @@ def main(trials=18):
     plot_history(pd.read_csv(EXPERIMENTS_DIR / f"history_confirm_{selected_name}.csv"),
                  FIGURES_DIR / "training_final_cv.png", "final_cv")
 
-    # Honest internal holdout: model sees development rows only.
+    # The epoch count is selected only from confirmatory development CV.
+    final_epochs = max(20, int(confirm["best_epoch_median"]))
+
+    # Honest internal holdout: fit for the fixed CV-derived epoch count. The
+    # holdout is used once for reporting, never for checkpoint/model selection.
     pre = build_preprocessor(X_dev, **prep_params(best_params))
     Xd = pre.fit_transform(X_dev).astype(np.float32)
     Xh = pre.transform(X_hold).astype(np.float32)
     target = TargetTransformer(best_params.get("target_transform", "raw")).fit(y_dev)
     cfg = config_from_dict(best_params, seed=SEED)
-    val_model, val_history, holdout_score = train_mlp(
-        Xd, target.transform(y_dev).astype(np.float32), Xh, y_hold, target, cfg)
+    val_model, val_history = train_mlp_fixed(
+        Xd, target.transform(y_dev).astype(np.float32), cfg, final_epochs)
     hold_pred = target.inverse_transform(predict_scaled(val_model, Xh))
-    best_epoch = min(val_history, key=lambda row: row["val_rmse"])["epoch"]
+    holdout_score = rmse(y_hold, hold_pred)
+
+    # Non-MLP benchmark is evaluated only after the MLP selection is frozen.
+    ridge_prep = build_preprocessor(X_dev, feature_engineering=True, scaler="standard", skew_threshold=.75)
+    ridge_dev = ridge_prep.fit_transform(X_dev)
+    ridge = Ridge(alpha=20.0).fit(ridge_dev, np.log1p(y_dev))
+    ridge_pred = np.expm1(ridge.predict(ridge_prep.transform(X_hold)))
+    benchmark_rmse = rmse(y_hold, ridge_pred)
+    pd.DataFrame([{"model": "Ridge benchmark (not candidate)", "holdout_rmse": benchmark_rmse}]).to_csv(
+        EXPERIMENTS_DIR / "benchmark.csv", index=False)
+
     PREDICTIONS_DIR.mkdir(exist_ok=True)
     pd.DataFrame({ID_COLUMN: X_hold[ID_COLUMN].to_numpy(), TARGET: hold_pred}).to_csv(
         PREDICTIONS_DIR / "internal_holdout_predictions.csv", index=False)
     holdout_metrics = {
         "rmse": holdout_score, "mae": float(np.mean(np.abs(y_hold - hold_pred))),
-        "bias": float(np.mean(y_hold - hold_pred)), "best_epoch": int(best_epoch),
+        "bias": float(np.mean(y_hold - hold_pred)), "fixed_epochs": int(final_epochs),
         "ridge_benchmark_rmse": benchmark_rmse,
     }
     (ARTIFACTS_DIR / "holdout_metrics.json").write_text(json.dumps(holdout_metrics, indent=2), encoding="utf-8")
     error_analysis(X_hold, y_hold, hold_pred, df)
-    plot_history(pd.DataFrame(val_history), FIGURES_DIR / "training_final_holdout.png", "modelo seleccionado")
+    pd.DataFrame(val_history).to_csv(EXPERIMENTS_DIR / "history_validation_fixed.csv", index=False)
+    plot_fixed_history(pd.DataFrame(val_history), FIGURES_DIR / "training_final_holdout.png",
+                       "Reentrenamiento de validación con épocas fijas")
 
     validation_metadata = {
         "artifact_role": "operational held-out simulation only", "selection_cv": confirm,
@@ -340,9 +366,8 @@ def main(trials=18):
     simulated = df.iloc[hold_idx].copy()
     simulated.to_csv(ARTIFACTS_DIR / "simulated_heldout.csv", index=False)
 
-    # Competition artifact retrained on all 1,168 labeled rows. Epoch count is
-    # determined only by the five-fold development CV above.
-    final_epochs = max(20, int(confirm["best_epoch_median"]))
+    # Competition artifact retrained on all 1,168 labeled rows using the same
+    # epoch count determined only by five-fold development CV.
     metadata = {
         "artifact_role": "competition final model", "created_at": datetime.now(timezone.utc).isoformat(),
         "selection_cv": confirm, "honest_internal_holdout": holdout_metrics,

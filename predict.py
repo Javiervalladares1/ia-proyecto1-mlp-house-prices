@@ -19,12 +19,16 @@ def predict_file(input_csv: Path, output_csv: Path, model_dir: Path):
     has_target = TARGET in df.columns
     y_true = df[TARGET].to_numpy() if has_target else None
     X = df.drop(columns=[TARGET], errors="ignore")
-    missing = sorted(set(expected) - set(X.columns))
+    ids = X[ID_COLUMN].to_numpy() if ID_COLUMN in X else np.arange(1, len(X) + 1)
+    required = [column for column in expected if column != ID_COLUMN]
+    missing = sorted(set(required) - set(X.columns))
     if missing:
         raise ValueError(f"Faltan {len(missing)} columnas requeridas: {missing}")
     extra = sorted(set(X.columns) - set(expected))
     if extra:
         print(f"Aviso: se ignoraran columnas adicionales: {extra}")
+    if ID_COLUMN in expected and ID_COLUMN not in X:
+        X[ID_COLUMN] = ids
     X = X[expected]
     preprocessor = joblib.load(model_dir / "preprocessor.joblib")
     target = joblib.load(model_dir / "target_transformer.joblib")
@@ -33,7 +37,6 @@ def predict_file(input_csv: Path, output_csv: Path, model_dir: Path):
     if Xp.shape[1] != input_dim:
         raise RuntimeError(f"Dimension procesada inesperada: {Xp.shape[1]} != {input_dim}")
     pred = target.inverse_transform(predict_scaled(model, Xp, device="cpu"))
-    ids = X[ID_COLUMN].to_numpy() if ID_COLUMN in X else np.arange(1, len(X) + 1)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({ID_COLUMN: ids, TARGET: pred}).to_csv(output_csv, index=False)
     print(f"Predicciones guardadas: {output_csv} ({len(pred)} filas)")
@@ -50,4 +53,3 @@ if __name__ == "__main__":
     parser.add_argument("--model-dir", type=Path, default=MODELS_DIR / "final")
     args = parser.parse_args()
     predict_file(args.input_csv, args.output, args.model_dir)
-
