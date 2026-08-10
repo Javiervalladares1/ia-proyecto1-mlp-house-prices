@@ -35,7 +35,17 @@ class CompetitionPipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "OverallQual"):
                 predict_file(input_path, output_path, MODELS_DIR / "final")
 
+    def test_missing_id_uses_sequential_ids(self):
+        sample = self.sample.drop(columns=["Id"])
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "input.csv"
+            output_path = Path(directory) / "output.csv"
+            sample.to_csv(input_path, index=False)
+            pred = predict_file(input_path, output_path, MODELS_DIR / "final")
+            result = pd.read_csv(output_path)
+            self.assertEqual(len(pred), 5)
+            self.assertEqual(result["Id"].tolist(), [1, 2, 3, 4, 5])
+
 
 if __name__ == "__main__":
     unittest.main()
-

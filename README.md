@@ -5,13 +5,13 @@ Implementación reproducible de un Multi-Layer Perceptron para predecir `SalePri
 ## Resultado principal
 
 - CV confirmatoria estratificada, 5 folds: **26,847.57 ± 3,545.49 USD**.
-- Holdout interno intacto (20%, abierto una sola vez): **17,754.33 USD**.
+- Holdout interno independiente (20%, evaluado con 37 épocas fijadas por CV): **19,916.20 USD**.
 - Baseline MLP: **36,873.49 USD** de RMSE CV.
 - Arquitectura final: `512 -> 256 -> 128 -> 64 -> 1`, activación GELU.
 - Seed global: `42`.
 - Repositorio: <https://github.com/Javiervalladares1/ia-proyecto1-mlp-house-prices>
 
-El artefacto en `models/final/` fue reentrenado con las 1,168 observaciones después de seleccionar la configuración exclusivamente con válidación cruzada. Por eso el holdout reportado proviene del artefacto separado `models/válidation_model/`, no de una evaluación contaminada del modelo final.
+El artefacto en `models/final/` fue reentrenado con las 1,168 observaciones después de seleccionar la configuración exclusivamente con validación cruzada. El holdout reportado procede del artefacto local separado `models/validation_model/`, entrenado desde cero durante 37 épocas fijadas por la CV, sin early stopping ni selección de checkpoints sobre el holdout.
 
 ## Estructura
 
@@ -41,9 +41,9 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Coloque el archivo de entrenamiento en `data/raw/train.csv`. Debe incluir las 80 columnas predictoras, `Id` y `SalePrice`.
+Coloque el archivo de entrenamiento en `data/raw/train.csv`. Debe incluir 79 variables predictoras, `Id` y `SalePrice`.
 
-## Reproduccion
+## Reproducción
 
 EDA y figuras:
 
@@ -57,7 +57,7 @@ Experimentos, búsqueda Optuna, CV, holdout y reentrenamiento final:
 python train.py --trials 18
 ```
 
-La búsqueda usa una reserva interna estratificada del 20%, CV de 3 folds para exploración/Optuna y una confirmación independiente de 5 folds sobre tres candidatos. Imputadores, clipping, deteccion de asimetría, escaladores, codificadores y selección de categorías se ajustan dentro de cada fold.
+La búsqueda usa una reserva interna estratificada del 20%, CV de 3 folds para exploración/Optuna y una confirmación independiente de 5 folds sobre tres candidatos. Imputadores, clipping, detección de asimetría, escaladores, codificadores y selección de categorías se ajustan dentro de cada fold. La mediana de épocas de la CV confirmatoria se congela antes de evaluar el holdout.
 
 Pruebas:
 
@@ -67,13 +67,13 @@ python -m unittest discover -s tests -v
 
 ## Predicción del dataset held-out
 
-El comando operativo para el dia de la competencia es:
+El comando operativo para el día de la competencia es:
 
 ```bash
 python predict.py /ruta/al/test.csv
 ```
 
-Esto carga automaticamente `models/final/`, válida columnas, reordena features, tolera categorías no vistas, aplica exactamente el preprocessing guardado e inserta `Id,SalePrice` en `predictions/predictions.csv`.
+Esto carga automáticamente `models/final/`, valida y reordena columnas, tolera categorías no vistas y archivos sin `Id`, aplica exactamente el preprocessing guardado e inserta `Id,SalePrice` en `predictions/predictions.csv`.
 
 Para elegir otro nombre de salida:
 
@@ -94,7 +94,7 @@ Si el CSV contiene `SalePrice`, el script también imprime el RMSE en escala ori
 ## Artefactos importantes
 
 - `experiments/results.csv`: iteraciones completas con métricas reales.
-- `experiments/optuna_trials.csv`: 17 trials bayesianos, incluidos 5 podados tempranamente.
+- `experiments/optuna_trials.csv`: 18 trials bayesianos, incluidos 6 podados tempranamente.
 - `artifacts/best_configuration.json`: configuración y métricas seleccionadas.
 - `artifacts/holdout_metrics.json`: evaluación honesta del holdout.
 - `models/final/metadata.json`: columnas, versiones, hardware e hiperparámetros.
@@ -102,4 +102,4 @@ Si el CSV contiene `SalePrice`, el script también imprime el RMSE en escala ori
 
 ## Reproducibilidad y leakage
 
-La división de competencia simulada utiliza seed `20260817`; las demas fuentes aleatorias usan `42` y seeds derivadas por fold. Ninguna transformación que aprende estadisticas se ajusta fuera de los datos de entrenamiento del fold. El holdout no interviene en la elección de arquitectura, preprocessing, hiperparámetros ni número de épocas.
+La división de competencia simulada utiliza seed `20260817`; las demás fuentes aleatorias usan `42` y seeds derivadas por fold. Ninguna transformación que aprende estadísticas se ajusta fuera de los datos de entrenamiento del fold. El holdout no interviene en la elección de arquitectura, preprocessing, hiperparámetros, número de épocas ni checkpoint.

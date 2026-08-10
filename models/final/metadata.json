@@ -1,6 +1,6 @@
 {
   "artifact_role": "competition final model",
-  "created_at": "2026-08-09T07:48:57.289126+00:00",
+  "created_at": "2026-08-10T18:36:27.323992+00:00",
   "selection_cv": {
     "train_rmse": 12786.094687261557,
     "cv_rmse_mean": 26847.57348904814,
@@ -46,10 +46,10 @@
     ]
   },
   "honest_internal_holdout": {
-    "rmse": 17754.331359714015,
-    "mae": 12384.061256843415,
-    "bias": -296.80691452675046,
-    "best_epoch": 44,
+    "rmse": 19916.198494349108,
+    "mae": 13731.263884517863,
+    "bias": 1325.041998486744,
+    "fixed_epochs": 37,
     "ridge_benchmark_rmse": 21275.42124792129
   },
   "data_shape": [

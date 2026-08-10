@@ -135,11 +135,16 @@ def train_mlp(X_train, y_train_scaled, X_val, y_val_original, target_transformer
         train_pred = target_transformer.inverse_transform(train_scaled)
         val_pred = target_transformer.inverse_transform(val_scaled)
         train_true = target_transformer.inverse_transform(y_train_scaled)
+        val_true_scaled = target_transformer.transform(np.asarray(y_val_original))
+        train_loss = float(np.mean((np.asarray(y_train_scaled) - train_scaled) ** 2))
+        val_loss = float(np.mean((val_true_scaled - val_scaled) ** 2))
         train_rmse = float(np.sqrt(np.mean((train_true - train_pred) ** 2)))
         val_rmse = float(np.sqrt(np.mean((np.asarray(y_val_original) - val_pred) ** 2)))
         history.append({
             "epoch": epoch,
-            "train_loss": float(np.mean(batch_losses)),
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "batch_train_loss": float(np.mean(batch_losses)),
             "train_rmse": train_rmse,
             "val_rmse": val_rmse,
             "learning_rate": optimizer.param_groups[0]["lr"],
